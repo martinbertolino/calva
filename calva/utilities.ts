@@ -56,17 +56,26 @@ function getWordAtPosition(document, position) {
 }
 
 function getDocument(document) {
-    if (document) {
-        return document.hasOwnProperty('fileName') ? document : vscode.window.activeTextEditor.document;
+    if (document && document.hasOwnProperty('fileName')) {
+        return document;
+    } else if (vscode.window.activeTextEditor) {
+        return vscode.window.activeTextEditor.document;
+    } else if (vscode.window.visibleTextEditors.length > 0) {
+        return vscode.window.visibleTextEditors[0].document;
     } else {
-        return vscode.window.activeTextEditor.document
+        return null;
     }
 }
 
 function getFileType(document) {
-    let doc = getDocument(document),
-        filetypeIndex = (doc.fileName.lastIndexOf('.') + 1);
-    return doc.fileName.substr(filetypeIndex, doc.fileName.length);
+    let doc = getDocument(document);
+
+    if (doc) {
+        return doc.fileName.substr((doc.fileName.lastIndexOf('.') + 1), doc.fileName.length);
+    }
+    else {
+        return 'clj';
+    }
 }
 
 function getFileName(document) {

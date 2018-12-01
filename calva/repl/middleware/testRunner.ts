@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import * as _ from 'lodash';
 import * as state from '../../state';
-import * as repl from '../../../lib/calva.repl.client'
+import repl from '../client';
 import evaluate from './evaluate';
 import * as util from '../../utilities';
 
-import * as message from '../../../lib/calva.repl.message';
+import * as calvaLib from '../../../lib/calva';
 
 
 
@@ -107,7 +107,7 @@ function runTests(messages, startStr, errorStr, log = true) {
         // Thus we only send new messages when a message has returned.
         (function loop(i) {
             new Promise((resolve, reject) => {
-                testClient = repl.create({}, current).once('connect', () => {
+                testClient = calvaLib.nrepl_create(repl.getDefaultOptions()).once('connect', () => {
                     testClient.send(messages[i], (result) => {
                         exceptions += (_.some(result, "ex") ? 1 : 0);
                         errors += (_.some(result, "err") ? 1 : 0);
@@ -128,7 +128,8 @@ function runTests(messages, startStr, errorStr, log = true) {
                 if (i < messages.length - 1) {
                     loop(i + 1);
                 } else {
-                    if ((messages[0].op === message.operation.RETEST) && (results[0][0]["testing-ns"].length < 1)) {
+                    let msgs = calvaLib.migration_jsify(messages);
+                    if ((msgs[0].op === calvaLib.migration_jsify(calvaLib.message_operation).RETEST) && (results[0][0]["testing-ns"].length < 1)) {
                         chan.appendLine("No tests to rerun. (They probably all passed last time 🤘)")
                     } else {
                         markTestResults(results);
@@ -144,15 +145,15 @@ function runTests(messages, startStr, errorStr, log = true) {
 function runAllTests(document = {}) {
     let doc = util.getDocument(document),
         session = util.getSession(util.getFileType(doc)),
-        msg = message.testAllMsg(session);
+        msg = calvaLib.message_testAllMsg(session);
 
     runTests([msg], "Running all tests", "running all tests");
 }
 
 function runAllTestsCommand() {
-    let chan = state.deref().get('outputChannel');
+    //let chan = state.deref().get('outputChannel');
 
-    chan.show();
+    //chan.show();
     runAllTests();
 }
 
@@ -160,10 +161,10 @@ function getNamespaceTestMessages(document = {}) {
     let doc = util.getDocument(document),
         session = util.getSession(util.getFileType(doc)),
         ns = util.getNamespace(doc.getText()),
-        messages = [message.testMsg(session, ns)];
+        messages = [calvaLib.message_testMsg(session, ns)];
 
     if (!ns.endsWith('-test')) {
-        messages.push(message.testMsg(session, ns + '-test'));
+        messages.push(calvaLib.message_testMsg(session, ns + '-test'));
     }
     return messages;
 }
@@ -175,14 +176,14 @@ function runNamespaceTests(document = {}) {
 }
 
 function runNamespaceTestsCommand() {
-    state.deref().get('outputChannel').show();
+    //state.deref().get('outputChannel').show(false);
     runNamespaceTests();
 }
 
 function rerunTests(document = {}) {
     let doc = util.getDocument(document),
         session = util.getSession(util.getFileType(doc)),
-        msg = message.rerunTestsMsg(session);
+        msg = calvaLib.message_rerunTestsMsg(session);
 
     evaluate.evaluateFile({}, () => {
         runTests([msg], "Retesting", "retesting");
@@ -190,7 +191,7 @@ function rerunTests(document = {}) {
 }
 
 function rerunTestsCommand() {
-    state.deref().get('outputChannel').show();
+    //state.deref().get('outputChannel').show();
     rerunTests();
 }
 

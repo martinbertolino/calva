@@ -1,9 +1,9 @@
 import { TextDocument, Position, CancellationToken, CompletionContext, Hover, CompletionItemKind, window, CompletionList, CompletionItemProvider, CompletionItem } from 'vscode';
 import * as state from '../state';
-import * as repl from '../../lib/calva.repl.client'
+import repl from '../repl/client';
 import * as util from '../utilities';
 import { Context } from 'vm';
-import * as message from '../../lib/calva.repl.message';
+import * as calvaLib from '../../lib/calva';
 
 export default class CalvaCompletionItemProvider implements CompletionItemProvider {
     state: any;
@@ -31,9 +31,9 @@ export default class CalvaCompletionItemProvider implements CompletionItemProvid
         if (this.state.deref().get("connected")) {
             return new Promise<CompletionList>((resolve, reject) => {
                 let current = this.state.deref(),
-                    client = repl.create({}, this.state.deref())
+                    client = calvaLib.nrepl_create(repl.getDefaultOptions())
                         .once('connect', () => {
-                            let msg = message.completeMsg(util.getSession(filetype),
+                            let msg = calvaLib.message_completeMsg(util.getSession(filetype),
                                 util.getNamespace(document.getText()), text),
                                 completions = [];
                             client.send(msg, function (results) {
@@ -51,16 +51,16 @@ export default class CalvaCompletionItemProvider implements CompletionItemProvid
                                     }
                                 }
                                 if (completions.length > 0) {
-                                    resolve(new CompletionList(completions, false));
+                                    resolve(new CompletionList(completions, true));
                                 } else {
-                                    reject("No completions found");
+                                    resolve(new CompletionList(completions, true));
                                 }
                                 client.end();
                             });
                         });
             });
         } else {
-            return [new CompletionItem("Connect to repl for auto-complete..")];
+            return [];
         }
     }
 
@@ -71,9 +71,9 @@ export default class CalvaCompletionItemProvider implements CompletionItemProvid
         return new Promise<CompletionItem>((resolve, reject) => {
             let current = this.state.deref();
             if (current.get('connected')) {
-                let client = repl.create({}, current).once('connect', () => {
+                let client = calvaLib.nrepl_create(repl.getDefaultOptions()).once('connect', () => {
                     let document = window.activeTextEditor.document,
-                        msg = message.infoMsg(util.getSession(filetype),
+                        msg = calvaLib.message_infoMsg(util.getSession(filetype),
                             util.getNamespace(document.getText()), item.label);
                     client.send(msg, function (results) {
                         for (var r = 0; r < results.length; r++) {

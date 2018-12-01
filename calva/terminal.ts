@@ -16,7 +16,7 @@ function terminalSlug(sessionSlug) {
 function createREPLTerminal(sessionType, shadowBuild, outputChan) {
     let current = state.deref(),
         slug = terminalSlug(sessionType),
-        terminalName = (sessionType === 'clj' ? 'Clojure' : 'CojureScript') + ' REPL',
+        terminalName = (sessionType === 'clj' ? 'Clojure' : 'ClojureScript') + ' REPL',
         terminal = null;
 
     if (current.get(slug)) {
@@ -61,10 +61,10 @@ function loadNamespace() {
     setREPLNamespace(true);
 }
 
-function loadNamespaceCommand() {
-    let terminal = state.deref().get(terminalSlug(util.getREPLSessionType()));
+function loadNamespaceCommand(focus = true) {
+    let terminal: vscode.Terminal = state.deref().get(terminalSlug(util.getREPLSessionType()));
     if (terminal) {
-        terminal.show(true);
+        terminal.show(focus);
         loadNamespace();
     }
 }
@@ -90,7 +90,6 @@ function setREPLNamespace(reload = false) {
         evaluate.evaluateFile();
     }
     sendTextToREPLTerminal("(in-ns '" + nameSpace + ")", true);
-    openREPLTerminal();
 }
 
 function setREPLNamespaceCommand() {
@@ -98,6 +97,7 @@ function setREPLNamespaceCommand() {
     if (terminal) {
         terminal.show(true);
         setREPLNamespace(false);
+        openREPLTerminal();
     }
 }
 
@@ -108,10 +108,9 @@ function evalCurrentFormInREPLTerminal(topLevel = false) {
         codeSelection = null,
         code = "";
 
-    annotations.clearEvaluationDecorations(editor);
     if (selection.isEmpty) {
-        codeSelection = select.adjustRangeIgnoringComment(doc, select.getFormSelection(doc, selection.active, topLevel));
-        annotations.decorateSelection(codeSelection, editor);
+        codeSelection = select.getFormSelection(doc, selection.active, topLevel);
+        annotations.decorateSelection(codeSelection, editor, annotations.AnnotationStatus.TERMINAL);
         code = doc.getText(codeSelection);
     } else {
         codeSelection = selection;

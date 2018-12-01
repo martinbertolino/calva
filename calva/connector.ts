@@ -6,8 +6,8 @@ import * as util from './utilities';
 import shadow from './shadow';
 import status from './status';
 import terminal from './terminal';
-import * as message from '../lib/calva.repl.message';
-import * as repl from '../lib/calva.repl.client'
+import repl from './repl/client';
+import * as calvaLib from '../lib/calva';
 
 function nreplPortFile() {
     if (fs.existsSync(shadow.shadowNReplPortFile())) {
@@ -22,6 +22,10 @@ function disconnect(options = null, callback = () => { }) {
     let chan = state.deref().get('outputChannel'),
         connections = [];
 
+    if (!options) {
+        options = repl.getDefaultOptions();
+    }
+
 
     ['clj', 'cljs'].forEach(sessionType => {
         if (util.getSession(sessionType)) {
@@ -35,8 +39,8 @@ function disconnect(options = null, callback = () => { }) {
 
     let n = connections.length;
     if (n > 0) {
-        let client = repl.create(options, state.deref()).once('connect', () => {
-            client.send(message.listSessionsMsg(), results => {
+        let client = calvaLib.nrepl_create(options).once('connect', () => {
+            client.send(calvaLib.message_listSessionsMsg(), results => {
                 client.end();
                 let sessions = _.find(results, 'sessions')['sessions'];
                 if (sessions) {
@@ -44,8 +48,8 @@ function disconnect(options = null, callback = () => { }) {
                         let sessionType = connection[0],
                             sessionId = connection[1]
                         if (sessions.indexOf(sessionId) != -1) {
-                            let client = repl.create(options, state.deref()).once('connect', () => {
-                                client.send(message.closeMsg(sessionId), () => {
+                            let client = calvaLib.nrepl_create(options).once('connect', () => {
+                                client.send(calvaLib.message_closeMsg(sessionId), () => {
                                     client.end();
                                     n--;
                                     state.cursor.set(sessionType, null);
@@ -81,7 +85,7 @@ function connectToHost(hostname, port) {
         let onConnect = () => {
             chan.appendLine("Hooking up nREPL sessions...");
 
-            client.send(message.cloneMsg(), cloneResults => {
+            client.send(calvaLib.message_cloneMsg(), cloneResults => {
                 client.end();
                 let cljSession = _.find(cloneResults, 'new-session')['new-session'];
                 if (cljSession) {
@@ -109,11 +113,11 @@ function connectToHost(hostname, port) {
             });
         };
 
-        let client = repl.create({
+        let client = calvaLib.nrepl_create({
             "host": hostname,
             "port": port,
             "on-connect": onConnect
-        }, state.deref());
+        });
     });
 }
 
@@ -137,14 +141,14 @@ function makeCljsSessionClone(hostname, port, session, shadowBuild, callback) {
             }
         });
     } else {
-        let client = repl.create({ hostname, port }, state.deref()).once('connect', () => {
-            client.send(message.cloneMsg(session), results => {
+        let client = calvaLib.nrepl_create({ hostname, port }).once('connect', () => {
+            client.send(calvaLib.message_cloneMsg(session), results => {
                 client.end();
                 let cljsSession = _.find(results, 'new-session')['new-session'];
                 if (cljsSession) {
-                    let client = repl.create({ hostname, port }, state.deref()).once('connect', () => {
-                        let msg = shadowBuild ? message.startShadowCljsReplMsg(cljsSession, shadowBuild) :
-                            message.eval_code_msg(cljsSession, util.getCljsReplStartCode());
+                    let client = calvaLib.nrepl_create({ hostname, port }).once('connect', () => {
+                        let msg = shadowBuild ? calvaLib.message_startShadowCljsReplMsg(cljsSession, shadowBuild) :
+                            calvaLib.message_evalCode(cljsSession, util.getCljsReplStartCode());
                         client.send(msg, cljsResults => {
                             client.end();
                             let valueResult = _.find(cljsResults, 'value'),

@@ -1,22 +1,5 @@
 import * as vscode from 'vscode';
 
-//import * as VM from 'vm';
-const isDevRegex = /^--inspect(-brk)?=?/,
-    isDev = process.execArgv ? process.execArgv.some(arg => isDevRegex.test(arg)) : false;
-if (isDev) {
-    require("../lib/shadow.cljs.devtools.client.node");
-    console.log("In Calva development mode.")
-    global["SHADOW_NODE_EVAL"] = function (js, smJson) {
-        if (smJson) {
-            js += "\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,";
-            js += Buffer.from(smJson).toString('base64');
-        }
-        //console.log(js);
-        return eval(js);
-    };
-}
-
-
 import * as state from './state';
 import status from './status';
 import connector from './connector';
@@ -28,9 +11,10 @@ import DefinitionProvider from './providers/definition';
 import EvaluateMiddleWare from './repl/middleware/evaluate';
 import LintMiddleWare from './repl/middleware/lint';
 import TestRunnerMiddleWare from './repl/middleware/testRunner';
+import annotations from './providers/annotations';
 import select from './repl/middleware/select';
 
-import * as greet from '../lib/calva.greet';
+import * as calvaLib from '../lib/calva';
 
 
 function onDidSave(document) {
@@ -78,9 +62,6 @@ function activate(context) {
     status.update();
 
     // COMMANDS
-    context.subscriptions.push(vscode.commands.registerCommand('calva.activate', () => {
-        chan.appendLine("Activate command issued.");
-    }));
     context.subscriptions.push(vscode.commands.registerCommand('calva.connect', connector.connect));
     context.subscriptions.push(vscode.commands.registerCommand('calva.reconnect', connector.reconnect));
     context.subscriptions.push(vscode.commands.registerCommand('calva.toggleCLJCSession', connector.toggleCLJCSession));
@@ -101,6 +82,7 @@ function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand('calva.setREPLNamespace', terminal.setREPLNamespaceCommand));
     context.subscriptions.push(vscode.commands.registerCommand('calva.evalCurrentFormInREPLTerminal', terminal.evalCurrentFormInREPLTerminalCommand));
     context.subscriptions.push(vscode.commands.registerCommand('calva.evalCurrentTopLevelFormInREPLTerminal', terminal.evalCurrentTopLevelFormInREPLTerminalCommand));
+    context.subscriptions.push(vscode.commands.registerCommand('calva.clearInlineResults', annotations.clearEvaluationDecorations))
 
     // PROVIDERS
     context.subscriptions.push(vscode.languages.registerCompletionItemProvider(state.mode, new CalvaCompletionItemProvider()));
@@ -122,6 +104,7 @@ function activate(context) {
             terminal.setREPLNamespace()
         }
     }));
+    context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(annotations.onDidChangeTextDocument))
     context.subscriptions.push(new vscode.Disposable(() => {
         connector.disconnect();
         chan.dispose();
@@ -133,7 +116,7 @@ function activate(context) {
 
     vscode.commands.executeCommand('setContext', 'calva:activated', true);
 
-    greet.activationGreetings(chan, lint);
+    calvaLib.greetings_activationGreetings(chan, lint);
 
     //Try to connect using an existing .nrepl-port file, searching the root-directory
     if (autoConnect) {

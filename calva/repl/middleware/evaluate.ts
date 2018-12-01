@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import * as _ from 'lodash';
 import * as state from '../../state';
-import * as repl from '../../../lib/calva.repl.client'
+import repl from '../client';
 import annotations from '../../providers/annotations';
 import select from './select';
 import * as util from '../../utilities';
 
-import * as message from '../../../lib/calva.repl.message';
+import * as calvaLib from '../../../lib/calva';
 
 
 function evaluateMsg(msg, startStr, errorStr, callback) {
@@ -17,24 +17,14 @@ function evaluateMsg(msg, startStr, errorStr, callback) {
 
     let evalClient = null;
     new Promise((resolve, reject) => {
-        evalClient = repl.create({}, current).once('connect', () => {
+        evalClient = calvaLib.nrepl_create(repl.getDefaultOptions()).once('connect', () => {
             evalClient.send(msg, (result) => {
-                let exceptions = _.some(result, "ex"),
-                    errors = _.some(result, "err");
-                if (!exceptions && !errors) {
-                    resolve(result);
-                } else {
-                    let err = _.find(result, "err").err;
-                    reject(result);
-                }
+                resolve(result);
             });
         });
     }).then((result) => {
         evalClient.end();
         callback(result);
-    }).catch((result) => {
-        evalClient.end();
-        callback(result, true);
     });
 }
 
@@ -53,10 +43,8 @@ function evaluateSelection(document = {}, options = {}) {
             codeSelection = null,
             code = "";
 
-        annotations.clearEvaluationDecorations(editor);
-
         if (selection.isEmpty) {
-            codeSelection = select.adjustRangeIgnoringComment(doc, select.getFormSelection(doc, selection.active, topLevel));
+            codeSelection = select.getFormSelection(doc, selection.active, topLevel);
             code = doc.getText(codeSelection);
         } else {
             codeSelection = selection,
@@ -64,10 +52,15 @@ function evaluateSelection(document = {}, options = {}) {
         }
 
         if (code.length > 0) {
-            let msg = message.evaluateMsg(session, util.getNamespace(doc.getText()), code, pprint),
+            annotations.decorateSelection(codeSelection, editor, annotations.AnnotationStatus.PENDING);
+            let msg = calvaLib.message_evaluateMsg(session, util.getNamespace(doc.getText()), code, pprint),
                 c = codeSelection.start.character,
                 re = new RegExp("^\\s{" + c + "}", "gm");
-            evaluateMsg(msg, "Evaluating:\n" + code.replace(re, ""), "unable to evaluate sexp", (results, hasError = false) => {
+            evaluateMsg(msg, "Evaluating:\n" + code.replace(re, ""), "unable to evaluate sexp", (results) => {
+                const hasExceptions = _.some(results, "ex"),
+                    hasStdErr = _.some(results, "err"),
+                    hasError = hasExceptions | hasStdErr;
+
                 let result = [],
                     out = [],
                     err = [];
@@ -79,7 +72,13 @@ function evaluateSelection(document = {}, options = {}) {
                     } else if (r.hasOwnProperty("pprint-out")) {
                         result.push(r["pprint-out"].replace(/\n$/, ""));
                     } else if (r.hasOwnProperty("out")) {
-                        out.push(r.out);
+                        if (hasExceptions && !hasStdErr) {
+                            // venantius/ultra outputs errors on stdout, it seems.
+                            err.push(r.out)
+                        }
+                        else {
+                            out.push(r.out);
+                        }
                     }
                 });
                 if (result.length + out.length + err.length > 0) {
@@ -91,7 +90,7 @@ function evaluateSelection(document = {}, options = {}) {
                         vscode.workspace.applyEdit(wsEdit);
                         chan.appendLine("Replaced inline.")
                     } else {
-                        annotations.decorateSelection(codeSelection, editor);
+                        annotations.decorateSelection(codeSelection, editor, (hasError ? annotations.AnnotationStatus.ERROR : annotations.AnnotationStatus.SUCCESS));
                         if (!pprint) {
                             const annotation = hasError ? err.join("\n") : result.join("\n");
                             annotations.decorateResults(' => ' + annotation.replace(/\n/gm, " ") + " ", hasError, codeSelection, editor);
@@ -104,7 +103,7 @@ function evaluateSelection(document = {}, options = {}) {
                             chan.append('=> ');
                             if (pprint) {
                                 chan.appendLine('');
-                                chan.show(true);                                    
+                                chan.show(true);
                             }
                             chan.appendLine(result.join("\n"));
                         }
@@ -145,7 +144,7 @@ function evaluateFile(document = {}, callback = () => { }) {
 
     if (doc.languageId == "clojure" && fileType != "edn" && current.get('connected')) {
         let session = util.getSession(util.getFileType(doc)),
-            msg = message.loadFileMsg(session, doc.getText(), fileName, doc.fileName);
+            msg = calvaLib.message_loadFileMsg(session, doc.getText(), fileName, doc.fileName);
 
         evaluateMsg(msg, "Evaluating file: " + fileName, "unable to evaluate file", (results) => {
             let result = null;
